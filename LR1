@@ -1,0 +1,141 @@
+# Бібліотека для візуалізації даних
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+class City:
+    def __init__(self, x, y, country, all_countries):
+        # Ініціалізація міста з його координатами, країною та початковою кількістю монет
+        self.x = x  # Координата X міста
+        self.y = y  # Координата Y міста
+        self.country = country  # Країна, до якої належить місто
+        self.coins = {c: 0 for c in all_countries}  # Словник для збереження монет з усіх країн
+        self.coins[country] = 1000000  # Початкова кількість монет міста
+        self.neighbors = []  # Список сусідніх міст
+
+    def add_neighbor(self, neighbor):
+        # Метод для додавання сусідніх міст (сусідів)
+        if neighbor not in self.neighbors:
+            self.neighbors.append(neighbor)
+
+    def exchange_coins(self):
+        # Метод для обміну монетами з усіма сусідами
+        coins_to_send = {country: int(amount / 1000) for country, amount in self.coins.items()}
+        for neighbor in self.neighbors:
+            for country, amount in coins_to_send.items():
+                neighbor.coins[country] += amount  # Додаємо монети сусіду
+                self.coins[country] -= amount  # Віднімаємо монети з міста
+
+    def distinct_coins(self):
+        # Повертає кількість унікальних монет у місті
+        return len([amount for amount in self.coins.values() if amount > 0])
+
+class Country:
+    def __init__(self, name):
+        # Ініціалізація країни з назвою та списком міст
+        self.name = name  # Назва країни
+        self.cities = []  # Список міст у країні
+        self.complete_day = None  # День, коли розповсюдження буде завершено (початково None)
+
+    def add_city(self, city):
+        # Метод для додавання міста до країни
+        self.cities.append(city)
+
+    def check_completion(self, current_day, all_countries):
+        # Перевіряє, чи всі міста в країні отримали хоча б одну монету з кожної країни
+        if self.complete_day is None:
+            if all(city.distinct_coins() == len(all_countries) for city in self.cities):
+                self.complete_day = current_day  # Записуємо день завершення розповсюдження
+
+# Налаштування симуляції
+def setup_simulation(countries_info):
+    # Створюємо словник для всіх країн та міст
+    all_countries = set(countries_info.keys())
+    countries = {name: Country(name) for name in all_countries}
+    cities = {}
+    for country_name, (xl, yl, xh, yh) in countries_info.items():
+        country = countries[country_name]
+        for x in range(xl, xh + 1):
+            for y in range(yl, yh + 1):
+                city = City(x, y, country_name, all_countries)
+                country.add_city(city)
+                cities[(x, y)] = city
+    # Встановлюємо сусідство для міст
+    for (x, y), city in cities.items():
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            neighbor = cities.get((x + dx, y + dy))
+            if neighbor:
+                city.add_neighbor(neighbor)
+    return countries, all_countries
+
+# Симуляція розповсюдження монет
+def simulate_euro_diffusion(countries, all_countries):
+    days = 0
+    while not all(country.complete_day is not None for country in countries.values()):
+        for country in countries.values():
+            for city in country.cities:
+                city.exchange_coins()
+        days += 1
+        for country in countries.values():
+            country.check_completion(days, all_countries)
+    # Сортуємо країни за днями завершення та алфавітом
+    sorted_countries = sorted([(country.name, country.complete_day) for country in countries.values()], key=lambda x: (x[1], x[0]))
+    return days, sorted_countries
+
+# Функція для візуалізації країн і міст на карті
+def plot_countries(countries, all_countries):
+    # Налаштування фігури для малювання
+    fig, ax = plt.subplots()
+    
+    # Малюємо зв'язки між містами (лінії дифузії)
+    for country in countries.values():
+        for city in country.cities:
+            for neighbor in city.neighbors:
+                ax.plot([city.x, neighbor.x], [city.y, neighbor.y], 'k-', lw=0.5)
+    
+    # Малюємо прямокутники для кожної країни та їх назви
+    for country in countries.values():
+        # Знаходимо межі країни
+        min_x = min(city.x for city in country.cities)
+        max_x = max(city.x for city in country.cities)
+        min_y = min(city.y for city in country.cities)
+        max_y = max(city.y for city in country.cities)
+        
+        # Створюємо прямокутник з сірим кольором
+        country_patch = patches.Rectangle((min_x-0.5, min_y-0.5), max_x-min_x+1, max_y-min_y+1, 
+                                          edgecolor='black', facecolor='lightgrey', linewidth=1.5, zorder=0)
+        ax.add_patch(country_patch)
+        
+        # Додаємо назву країни
+        ax.text((min_x + max_x) / 2, (min_y + max_y) / 2, country.name, 
+                ha='center', va='center', fontsize=12, color='black', weight='bold')
+
+    # Малюємо кола для міст
+    for country in countries.values():
+        for city in country.cities:
+            # Використовуємо scatter plot для позначення міст
+            ax.scatter(city.x, city.y, s=100, color='black', zorder=5)
+
+    # Встановлюємо межі графіку навколо зовнішніх міст
+    ax.set_xlim(0.5, max(city.x for country in countries.values() for city in country.cities) + 0.5)
+    ax.set_ylim(0.5, max(city.y for country in countries.values() for city in country.cities) + 0.5)
+
+    # Вимикаємо вісі, оскільки вони не потрібні для цієї візуалізації
+    ax.axis('off')
+
+    plt.show()
+
+# Визначаємо інформацію про країни безпосередньо у коді
+countries_info = {
+    'France': (1, 4, 4, 6),
+    'Spain': (3, 1, 6, 3),
+    'Portugal': (1, 1, 2, 2)
+}
+
+# Встановлюємо симуляцію за допомогою цієї інформації
+countries, all_countries = setup_simulation(countries_info)
+
+# Запускаємо симуляцію розповсюдження монет
+simulate_euro_diffusion(countries, all_countries)
+
+# Візуалізуємо результати симуляції
+plot_countries(countries,all_countries)
